@@ -7,6 +7,7 @@
 #define MAX_NAME_LENGTH 50
 #define MAX_DESTINATIONS 10
 #define NUM_SUGGESTED 8
+#define MAX_HALTS 8
 
 // Pre-defined suggested destinations (India only)
 struct SuggestedDestination {
@@ -96,74 +97,81 @@ void displayActivities(struct TreeNode* root) {
     }
 }
 
-// Dijkstra's algorithm to find the shortest path and distance
-void dijkstra(struct Destination destinations[MAX_DESTINATIONS], int numDestinations, char* source, char* destination) {
+// Find a destination index by name (case-insensitive). Returns -1 if not found.
+static int findDestByName(struct Destination dests[], int num, const char* name) {
+    for (int i = 0; i < num; i++) {
+        int match = 1;
+        int j = 0;
+        while (dests[i].name[j] != '\0' || name[j] != '\0') {
+            if (tolower((unsigned char)dests[i].name[j]) != tolower((unsigned char)name[j])) {
+                match = 0;
+                break;
+            }
+            j++;
+        }
+        if (match) return i;
+    }
+    return -1;
+}
+
+// Core Dijkstra on a 2-D adjacency matrix.
+// Fills path[] with node indices (source first), sets *pathLen.
+// Returns total distance, or INT_MAX if unreachable.
+static int runDijkstra(int dist2d[MAX_DESTINATIONS][MAX_DESTINATIONS], int num,
+                       int src, int dst,
+                       int path[MAX_DESTINATIONS], int* pathLen) {
     int dist[MAX_DESTINATIONS];
     int visited[MAX_DESTINATIONS];
     int prev[MAX_DESTINATIONS];
 
-    // Initialize distances and visited flags
-    for (int i = 0; i < numDestinations; i++) {
+    for (int i = 0; i < num; i++) {
         dist[i] = INT_MAX;
         visited[i] = 0;
         prev[i] = -1;
     }
+    dist[src] = 0;
 
-    // Find the source and destination indices
-    int sourceIndex = -1;
-    int destIndex = -1;
-    for (int i = 0; i < numDestinations; i++) {
-        if (strcmp(destinations[i].name, source) == 0) {
-            sourceIndex = i;
-        }
-        if (strcmp(destinations[i].name, destination) == 0) {
-            destIndex = i;
-        }
-    }
-
-    if (sourceIndex == -1 || destIndex == -1) {
-        printf("Source or destination not found in the list of destinations.\n");
-        return;
-    }
-
-    dist[sourceIndex] = 0;
-
-    for (int count = 0; count < numDestinations - 1; count++) {
+    for (int count = 0; count < num - 1; count++) {
+        // Pick unvisited node with smallest tentative distance
         int u = -1;
         int minDist = INT_MAX;
-
-        for (int v = 0; v < numDestinations; v++) {
+        for (int v = 0; v < num; v++) {
             if (!visited[v] && dist[v] < minDist) {
                 u = v;
                 minDist = dist[v];
             }
         }
-
+        // All remaining nodes unreachable
+        if (u == -1) break;
         visited[u] = 1;
 
-        for (int v = 0; v < numDestinations; v++) {
-            if (!visited[v] && destinations[u].distance + dist[u] < dist[v]) {
-                dist[v] = destinations[u].distance + dist[u];
+        for (int v = 0; v < num; v++) {
+            // Guard: skip disconnected edges and prevent INT_MAX overflow
+            if (!visited[v] && dist2d[u][v] != INT_MAX && dist[u] != INT_MAX &&
+                dist2d[u][v] + dist[u] < dist[v]) {
+                dist[v] = dist2d[u][v] + dist[u];
                 prev[v] = u;
             }
         }
     }
 
-    // Print the optimized distance
-    printf("Optimized Distance for the user's route from %s to %s: %d\n", source, destination, dist[destIndex]);
+    if (dist[dst] == INT_MAX) {
+        *pathLen = 0;
+        return INT_MAX;
+    }
 
-    // Reconstruct and print the path using prev[]
-    int path[MAX_DESTINATIONS];
-    int pathLen = 0;
-    for (int cur = destIndex; cur != -1; cur = prev[cur]) {
-        path[pathLen++] = cur;
+    // Reconstruct path by tracing prev[] from dst back to src
+    *pathLen = 0;
+    for (int cur = dst; cur != -1; cur = prev[cur])
+        path[(*pathLen)++] = cur;
+
+    // Reverse to get source-to-destination order
+    for (int i = 0, j = *pathLen - 1; i < j; i++, j--) {
+        int tmp = path[i];
+        path[i] = path[j];
+        path[j] = tmp;
     }
-    printf("Path: ");
-    for (int i = pathLen - 1; i >= 0; i--) {
-        printf("%s", destinations[path[i]].name);
-        if (i > 0) printf(" -> ");
-    }
-    printf("\n");
+    return dist[dst];
 }
 
 // Function to calculate total cost of activities
@@ -358,11 +366,23 @@ int main() {
     struct Destination destinations[MAX_DESTINATIONS];
     int numDestinationsInput = 0;
 
-    printf("\n--- Input Destination Information for Route Optimization ---\n");
-    printf("(Distances between consecutive destinations will be used for Dijkstra's algorithm)\n");
+    // Adjacency matrix: INT_MAX = no direct connection, 0 on diagonal
+    int distMatrix[MAX_DESTINATIONS][MAX_DESTINATIONS];
+    for (int i = 0; i < MAX_DESTINATIONS; i++) {
+        for (int j = 0; j < MAX_DESTINATIONS; j++) {
+            distMatrix[i][j] = (i == j) ? 0 : INT_MAX;
+        }
+    }
+
+    printf("\n--- Input Destinations for Route Optimization ---\n");
+    printf("(Enter stops in order; distances link consecutive stops bidirectionally)\n");
 
     do {
-        printf("\n--- Enter Destination #%d ---\n", numDestinationsInput + 1);
+        if (numDestinationsInput >= MAX_DESTINATIONS) {
+            printf("Maximum destinations (%d) reached.\n", MAX_DESTINATIONS);
+            break;
+        }
+        printf("\n--- Enter Stop #%d ---\n", numDestinationsInput + 1);
 
         showSuggestions();
 
@@ -375,66 +395,154 @@ int main() {
         } while (choice < 0 || choice > NUM_SUGGESTED);
         getchar();
 
+        int segDist = 0;
         if (choice == 0) {
             printf("Enter destination name (must be a place in India): ");
-            fgets(destinations[numDestinationsInput].name, sizeof(destinations[numDestinationsInput].name), stdin);
-            destinations[numDestinationsInput].name[strcspn(destinations[numDestinationsInput].name, "\n")] = 0;
+            fgets(destinations[numDestinationsInput].name,
+                  sizeof(destinations[numDestinationsInput].name), stdin);
+            destinations[numDestinationsInput].name[
+                strcspn(destinations[numDestinationsInput].name, "\n")] = 0;
 
-            do {
-                printf("Enter distance to the next destination (km): ");
-                scanf("%d", &destinations[numDestinationsInput].distance);
-                if (destinations[numDestinationsInput].distance < 0)
-                    printf("Error: Distance must be non-negative.\n");
-            } while (destinations[numDestinationsInput].distance < 0);
-
-            getchar();
+            if (numDestinationsInput > 0) {
+                do {
+                    printf("Enter distance from %s to %s (km): ",
+                           destinations[numDestinationsInput - 1].name,
+                           destinations[numDestinationsInput].name);
+                    scanf("%d", &segDist);
+                    if (segDist < 0)
+                        printf("Error: Distance must be non-negative.\n");
+                } while (segDist < 0);
+                getchar();
+            }
         } else {
             struct SuggestedDestination* s = &suggestedList[choice - 1];
             strncpy(destinations[numDestinationsInput].name, s->name, MAX_NAME_LENGTH - 1);
             destinations[numDestinationsInput].name[MAX_NAME_LENGTH - 1] = '\0';
 
-            printf("Suggested distance to next destination: %d km. Use it? (y/n): ", s->distance_to_next);
-            char useDefault;
-            scanf(" %c", &useDefault);
-            getchar();
-
-            if (useDefault == 'y' || useDefault == 'Y') {
-                destinations[numDestinationsInput].distance = s->distance_to_next;
-            } else {
-                do {
-                    printf("Enter distance to the next destination (km): ");
-                    scanf("%d", &destinations[numDestinationsInput].distance);
-                    if (destinations[numDestinationsInput].distance < 0)
-                        printf("Error: Distance must be non-negative.\n");
-                } while (destinations[numDestinationsInput].distance < 0);
+            if (numDestinationsInput > 0) {
+                printf("Suggested distance from %s to %s: %d km. Use it? (y/n): ",
+                       destinations[numDestinationsInput - 1].name,
+                       s->name, s->distance_to_next);
+                char useDefault;
+                scanf(" %c", &useDefault);
                 getchar();
+
+                if (useDefault == 'y' || useDefault == 'Y') {
+                    segDist = s->distance_to_next;
+                } else {
+                    do {
+                        printf("Enter distance from %s to %s (km): ",
+                               destinations[numDestinationsInput - 1].name, s->name);
+                        scanf("%d", &segDist);
+                        if (segDist < 0)
+                            printf("Error: Distance must be non-negative.\n");
+                    } while (segDist < 0);
+                    getchar();
+                }
             }
+        }
+
+        destinations[numDestinationsInput].distance = segDist;
+
+        // Register bidirectional edge between this stop and the previous one
+        if (numDestinationsInput > 0 && segDist > 0) {
+            int prev = numDestinationsInput - 1;
+            int cur = numDestinationsInput;
+            distMatrix[prev][cur] = segDist;
+            distMatrix[cur][prev] = segDist;
         }
 
         numDestinationsInput++;
 
-        printf("Add another destination? (y/n): ");
+        printf("Add another stop? (y/n): ");
         scanf(" %c", &addAnotherDestination);
         getchar();
 
     } while (addAnotherDestination == 'y' || addAnotherDestination == 'Y');
 
+    // --- Source, optional halts, and destination ---
     char preferredSource[MAX_NAME_LENGTH];
     char preferredDestination[MAX_NAME_LENGTH];
+    char halts[MAX_HALTS][MAX_NAME_LENGTH];
+    int numHalts = 0;
 
-    // Input user's preferred source and destination
-    printf("\n--- User's Preferred Source and Destination ---\n");
+    printf("\n--- Route: Source, Halts, and Destination ---\n");
 
-    printf("Enter preferred source: ");
+    printf("Enter source: ");
     fgets(preferredSource, sizeof(preferredSource), stdin);
     preferredSource[strcspn(preferredSource, "\n")] = 0;
 
-    printf("Enter preferred destination: ");
+    char addHalt;
+    printf("Add intermediate halts? (y/n): ");
+    scanf(" %c", &addHalt);
+    getchar();
+
+    while ((addHalt == 'y' || addHalt == 'Y') && numHalts < MAX_HALTS) {
+        printf("Enter halt #%d name: ", numHalts + 1);
+        fgets(halts[numHalts], sizeof(halts[numHalts]), stdin);
+        halts[numHalts][strcspn(halts[numHalts], "\n")] = 0;
+        numHalts++;
+        if (numHalts < MAX_HALTS) {
+            printf("Add another halt? (y/n): ");
+            scanf(" %c", &addHalt);
+            getchar();
+        }
+    }
+
+    printf("Enter destination: ");
     fgets(preferredDestination, sizeof(preferredDestination), stdin);
     preferredDestination[strcspn(preferredDestination, "\n")] = 0;
 
-    // Add the optimized distance calculation here
-    dijkstra(destinations, numDestinationsInput, preferredSource, preferredDestination);
+    // Build full route array: [source, halt1, ..., haltN, destination]
+    int routeLen = numHalts + 2;
+    char* route[MAX_HALTS + 2];
+    route[0] = preferredSource;
+    for (int i = 0; i < numHalts; i++)
+        route[i + 1] = halts[i];
+    route[routeLen - 1] = preferredDestination;
+
+    printf("\n--- Optimized Route ---\n");
+    int totalRouteDist = 0;
+    int routeValid = 1;
+
+    for (int leg = 0; leg < routeLen - 1; leg++) {
+        int srcIdx = findDestByName(destinations, numDestinationsInput, route[leg]);
+        int dstIdx = findDestByName(destinations, numDestinationsInput, route[leg + 1]);
+
+        if (srcIdx == -1) {
+            printf("Error: '%s' not found in stop list.\n", route[leg]);
+            routeValid = 0;
+            continue;
+        }
+        if (dstIdx == -1) {
+            printf("Error: '%s' not found in stop list.\n", route[leg + 1]);
+            routeValid = 0;
+            continue;
+        }
+
+        int path[MAX_DESTINATIONS];
+        int pathLen = 0;
+        int legDist = runDijkstra(distMatrix, numDestinationsInput,
+                                  srcIdx, dstIdx, path, &pathLen);
+
+        if (legDist == INT_MAX) {
+            printf("Leg %d: No path found from %s to %s.\n",
+                   leg + 1, route[leg], route[leg + 1]);
+            routeValid = 0;
+            continue;
+        }
+
+        printf("Leg %d: ", leg + 1);
+        for (int i = 0; i < pathLen; i++) {
+            printf("%s", destinations[path[i]].name);
+            if (i < pathLen - 1) printf(" -> ");
+        }
+        printf("  [%d km]\n", legDist);
+        totalRouteDist += legDist;
+    }
+
+    if (routeValid)
+        printf("Total route distance: %d km\n", totalRouteDist);
 
     // Calculate and display total cost and total days
     int totalCost = calculateTotalCost(&root);
