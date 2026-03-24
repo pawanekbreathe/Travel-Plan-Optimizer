@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "& '.claude/hooks/block-dangerous-commands.ps1'",
+            "statusMessage": "Checking for dangerous commands..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "& '.claude/hooks/clang-format.ps1'",
+            "statusMessage": "Running clang-format..."
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "& '.claude/hooks/tool-logger.ps1'",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

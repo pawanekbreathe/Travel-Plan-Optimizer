@@ -1,0 +1,32 @@
+# Compiled binaries
+*.exe
+*.o
+*.out
+travel_planner
+travel_optimizer
+travel_optimizer2
+
+# Build artifacts
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code — local secrets (never commit)
+.claude/settings.local.json
+**/.mcp.json
+.mcp.json
+
+# Claude Code memory (local only)
+.claude/projects/
