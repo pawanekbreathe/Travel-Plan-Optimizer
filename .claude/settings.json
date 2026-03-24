@@ -7,7 +7,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "& '.claude/hooks/block-dangerous-commands.ps1'",
+            "command": "$r=[Console]::In.ReadToEnd();if(-not $r.Trim()){exit 0};try{$j=$r|ConvertFrom-Json;$c=$j.tool_input.command;foreach($p in @('rm -rf','del /f','rmdir /s')){if($c -match [regex]::Escape($p)){@{continue=$false;stopReason='BLOCKED: '+$p+' is a destructive command not permitted in this project.'}|ConvertTo-Json -Compress|Write-Output;exit 2}}}catch{exit 0}",
             "statusMessage": "Checking for dangerous commands..."
           }
         ]
@@ -20,7 +20,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "& '.claude/hooks/clang-format.ps1'",
+            "command": "$r=[Console]::In.ReadToEnd();if(-not $r.Trim()){exit 0};try{$j=$r|ConvertFrom-Json;$f=$j.tool_input.file_path;if($f -and ($f -like '*.c' -or $f -like '*.h')){& clang-format -i $f 2>$null}}catch{exit 0}",
             "statusMessage": "Running clang-format..."
           }
         ]
@@ -31,7 +31,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "& '.claude/hooks/tool-logger.ps1'",
+            "command": "$r=[Console]::In.ReadToEnd();if(-not $r.Trim()){exit 0};try{$j=$r|ConvertFrom-Json;$t=$j.tool_name;$f=$j.tool_input.file_path;if(-not $f){$f=$j.tool_input.path};if(-not $f){$f=$j.tool_input.pattern};if(-not $f){$f=$j.tool_input.command};if(-not $f){$f='(none)'};$ts=Get-Date -Format 'yyyy-MM-dd HH:mm:ss';Add-Content -Path '.claude/tool-log.txt' -Value ($ts+' | '+$t+' | '+$f) -Encoding UTF8}catch{exit 0}",
             "async": true
           }
         ]
